@@ -1,0 +1,149 @@
+#!/usr/bin/php
+<?
+$configs = json_decode(file_get_contents($_SERVER['HOME'] . '/.pithy'), true);
+
+chdir($configs['base_dir']);
+
+$status = 0;
+
+switch($argv[1]) {
+    case 'current':
+        $current = getCurrent();
+        echo "v$current\n";
+        break;
+
+    case 'newest':
+        $newest = getNewest();
+        echo "v$newest\n";
+        break;
+
+    case 'oldest':
+        $oldest = getOldest();
+        echo "v$oldest\n";
+        break;
+
+    case 'rollback':
+        if($previous = getPrevious()) {
+            setCurrent($previous);
+            $current = getCurrent();
+            echo "Current release is now v$current\n";
+        } else {
+            echo "No older release available\n";
+        }
+        break;
+
+    case 'rollforward':
+        if($next = getNext()) {
+            setCurrent($next);
+            $current = getCurrent();
+            echo "Current release is now v$current\n";
+        } else {
+            echo "No newer release available\n";
+        }
+        break;
+
+    case 'deploy':
+        $next = getNewest() + 1;
+        echo "Deploying release v$next\n";
+
+        $current = getCurrent();
+        echo "Copying from current release v$current\n";
+        exec("cp -r releases/$current releases/$next", $lines, $status);
+        if($status) break;
+
+        //move to new release directory
+        chdir("releases/$next");
+
+        echo "Running Git updates\n";
+        exec("git fetch -p origin && git reset --hard origin/master", $lines, $status);
+        if($status) break;
+
+        echo "Running Composer\n";
+        exec("composer install", $lines, $status);
+        if($status) break;
+
+        echo "Running Bower\n";
+        exec("bower install", $lines, $status);
+        if($status) break;
+
+        //return to main directory
+        chdir("../..");
+
+        echo "Setting v$next as current release\n";
+        setCurrent($next);
+
+        $oldest = getOldest();
+        if($next - $oldest > 2) {
+            echo "Removing oldest release\n";
+            exec(`rm -rf releases/$oldest`);
+        }
+
+        $current = getCurrent();
+        echo "Current release is now v$current\n";
+
+        break;
+
+    default:
+        $status = 1;
+        echo "Unknow command: {$argv[1]}\n";
+}
+
+function getReleases() {
+    $releases = scandir('releases');
+    sort($releases, SORT_NUMERIC);
+
+    return array_filter($releases, 'is_numeric');
+}
+
+function setCurrent($release) {
+    global $configs;
+
+    unlink($configs['current']);
+
+    return symlink("releases/$release", $configs['current']);
+}
+
+function getNewest() {
+    $releases = getReleases();
+
+    return end($releases);
+}
+
+function getOldest() {
+    $releases = getReleases();
+
+    return reset($releases);
+}
+
+function getCurrent() {
+    global $configs;
+
+    $path = readlink($configs['current']);
+
+    return end(explode('/', $path));
+}
+
+function getPrevious() {
+    $releases = array_reverse(getReleases());
+    $current = getCurrent();
+
+    foreach($releases as $release) {
+        if($release < $current) return $release;
+    }
+
+    return false;
+}
+
+function getNext() {
+    $releases = getReleases();
+    $current = getCurrent();
+
+    foreach($releases as $release) {
+        if($release > $current) return $release;
+    }
+
+    return false;
+}
+
+exit($status);
+?>
