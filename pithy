@@ -83,9 +83,21 @@ switch($argv[1]) {
 
         break;
 
+    case 'help':
+        echo "current - show current release\n";
+        echo "newest - show newest available release\n";
+        echo "oldest - show oldest available release\n";
+        echo "rollback - move current release back one version\n";
+        echo "rollforward - move current release ahead one version\n";
+        echo "deploy - create a new release and make it current\n";
+        echo "help - display this help message\n";
+
+        break;
+
     default:
         $status = 1;
-        echo "Unknow command: {$argv[1]}\n";
+        echo "Unknow command \"{$argv[1]}\"\n";
+        echo "Run \"pithy help\" to view commands\n";
 }
 
 function getReleases() {
