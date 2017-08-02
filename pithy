@@ -1,8 +1,18 @@
 #!/usr/bin/php
 <?
-$configs = json_decode(file_get_contents($_SERVER['HOME'] . '/.pithy'), true);
+$file = $_SERVER['HOME'] . '/.pithy';
+if(!file_exists($file)) {
+    echo "Unable to locate config file\n";
+    exit(1);
+}
+$configs = json_decode(file_get_contents($file), true);
 
-chdir($configs['base_dir']);
+$dir = $configs['base_dir'];
+if(!is_dir($dir)) {
+    echo "$dir is not a directory\n";
+    exit(1);
+}
+chdir($dir);
 
 $status = 0;
 
