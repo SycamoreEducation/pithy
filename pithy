@@ -55,7 +55,8 @@ switch($argv[1]) {
         chdir("releases/$next");
 
         echo "Running Git updates\n";
-        exec("git fetch -p origin && git reset --hard origin/master", $lines, $status);
+        $commit = count($argv) > 2 ? $argv[2] : 'origin/master';
+        exec("git fetch -p origin && git reset --hard $commit", $lines, $status);
         if($status) break;
 
         echo "Running Composer\n";
