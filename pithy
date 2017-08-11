@@ -32,6 +32,13 @@ switch($argv[1]) {
         echo "v$oldest\n";
         break;
 
+    case 'list':
+        $releases = getReleases();
+        foreach($releases as $release) {
+            echo "v$release\n";
+        }
+        break;
+
     case 'rollback':
         if($previous = getPrevious()) {
             setCurrent($previous);
@@ -84,6 +91,7 @@ switch($argv[1]) {
         echo "current - show current release\n";
         echo "newest - show newest available release\n";
         echo "oldest - show oldest available release\n";
+        echo "list - show all available releases\n";
         echo "rollback - move current release back one version\n";
         echo "rollforward - move current release ahead one version\n";
         echo "drop - drop release (defaults to oldest)\n";
