@@ -52,41 +52,27 @@ switch($argv[1]) {
         }
         break;
 
+    case 'drop':
+        $status = dropRelease($argv[2]);
+
+        break;
+
+    case 'build':
+        $stauts = buildRelease($argv[2]);
+
+        break;
+
     case 'deploy':
-        $next = getNewest() + 1;
-        echo "Deploying release v$next\n";
+        if($status = buildRelease($argv[2])) break;
 
-        $current = getCurrent();
-        echo "Copying from current release v$current\n";
-        exec("cp -r releases/$current releases/$next", $lines, $status);
-        if($status) break;
-
-        //move to new release directory
-        chdir("releases/$next");
-
-        echo "Running Git updates\n";
-        $commit = count($argv) > 2 ? $argv[2] : 'origin/master';
-        exec("git fetch -p origin && git reset --hard $commit", $lines, $status);
-        if($status) break;
-
-        echo "Running Composer\n";
-        exec("composer install", $lines, $status);
-        if($status) break;
-
-        echo "Running Bower\n";
-        exec("bower install", $lines, $status);
-        if($status) break;
-
-        //return to main directory
-        chdir("../..");
+        $next = getNewest();
 
         echo "Setting v$next as current release\n";
         setCurrent($next);
 
-        $oldest = getOldest();
-        if($next - $oldest > 2) {
+        if(count(getReleases()) > 3) {
             echo "Removing oldest release\n";
-            exec(`rm -rf releases/$oldest`);
+            dropRelease($oldest);
         }
 
         $current = getCurrent();
@@ -100,6 +86,8 @@ switch($argv[1]) {
         echo "oldest - show oldest available release\n";
         echo "rollback - move current release back one version\n";
         echo "rollforward - move current release ahead one version\n";
+        echo "drop - drop release (defaults to oldest)\n";
+        echo "build - create a new release\n";
         echo "deploy - create a new release and make it current\n";
         echo "help - display this help message\n";
 
@@ -111,6 +99,61 @@ switch($argv[1]) {
         echo "Run \"pithy help\" to view commands\n";
 }
 
+function dropRelease($release) {
+    $oldest = $release ?: getOldest();
+    $current = getCurrent();
+
+    if($oldest == $current) {
+        echo "Cannot drop current version v$current\n";
+        return 1;
+    }
+
+    if(!is_numeric($oldest)) {
+        throw new Exception('Non-numeric release');
+    }
+
+    echo "Removing v$oldest\n";
+    exec("rm -rf releases/$oldest", $lines, $status);
+
+    return $status;
+}
+
+function buildRelease($target) {
+    $next = getNewest() + 1;
+    echo "Deploying release v$next\n";
+
+    $current = getCurrent();
+    echo "Copying from current release v$current\n";
+    exec("cp -r releases/$current releases/$next", $lines, $status);
+    if($status) return $status;
+
+    //move to new release directory
+    chdir("releases/$next");
+
+    do {
+        echo "Running Git updates\n";
+        $commit = $target ?: 'origin/master';
+        exec("git fetch -p origin && git reset --hard $commit", $lines, $status);
+        if($status) break;
+
+        echo "Running Composer\n";
+        exec("composer install", $lines, $status);
+        if($status) break;
+
+        echo "Running Bower\n";
+        exec("bower install", $lines, $status);
+    } while(false);
+
+    //return to main directory
+    chdir("../..");
+
+    if($status) return $status;
+
+    echo "Successfully built v$next\n";
+
+    return 0;
+}
+
 function getReleases() {
     $releases = scandir('releases');
     sort($releases, SORT_NUMERIC);
@@ -120,6 +163,10 @@ function getReleases() {
 
 function setCurrent($release) {
     global $configs;
+
+    if(!is_numeric($release)) {
+        throw new Exception('Non-numeric release');
+    }
 
     unlink($configs['current']);
 
