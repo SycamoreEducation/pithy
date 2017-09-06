@@ -69,8 +69,11 @@ switch($argv[1]) {
 
         break;
 
+    case 'hotfix':
+        $hotfix = true;
+        //intentional fall-through
     case 'deploy':
-        if($status = buildRelease($argv[2])) break;
+        if($status = buildRelease($argv[2], $hotfix)) break;
 
         $next = getNewest();
 
@@ -97,6 +100,7 @@ switch($argv[1]) {
         echo "drop - drop release (defaults to oldest)\n";
         echo "build - create a new release\n";
         echo "deploy - create a new release and make it current\n";
+        echo "hotfix - create a hotfix release and make it current\n";
         echo "help - display this help message\n";
 
         break;
@@ -126,31 +130,57 @@ function dropRelease($release) {
     return $status;
 }
 
-function buildRelease($target) {
+function initializeRelease() {
     $next = getNewest() + 1;
     echo "Deploying release v$next\n";
 
     $current = getCurrent();
     echo "Copying from current release v$current\n";
     exec("cp -r releases/$current releases/$next", $lines, $status);
+
+    return $next;
+}
+
+function updateRelease($target) {
+    echo "Running Git updates\n";
+    $commit = $target ?: 'origin/master';
+    exec("git fetch -p origin", $lines, $status);
+
     if($status) return $status;
+
+    exec("git reset --hard $commit", $lines, $status);
+
+    if($status) return $status;
+
+    echo "Running Composer\n";
+    exec("composer install", $lines, $status);
+
+    if($status) return $status;
+
+    echo "Running Bower\n";
+    exec("bower install", $lines, $status);
+
+    return $status;
+}
+
+function hotfixRelease($target) {
+    echo "Running Git updates\n";
+    exec("git fetch -p origin", $lines, $status);
+
+    if($status) return $status;
+
+    exec("git reset --hard && git cherry-pick -x $target", $lines, $status);
+
+    return $status;
+}
+
+function buildRelease($target, $hotfix=false) {
+    $next = initializeRelease();
 
     //move to new release directory
     chdir("releases/$next");
 
-    do {
-        echo "Running Git updates\n";
-        $commit = $target ?: 'origin/master';
-        exec("git fetch -p origin && git reset --hard $commit", $lines, $status);
-        if($status) break;
-
-        echo "Running Composer\n";
-        exec("composer install", $lines, $status);
-        if($status) break;
-
-        echo "Running Bower\n";
-        exec("bower install", $lines, $status);
-    } while(false);
+    $status = $hotfix ? hotfixRelease($target) : updateRelease($target);
 
     //return to main directory
     chdir("../..");
