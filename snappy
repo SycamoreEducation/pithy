@@ -1,0 +1,266 @@
+#!/usr/bin/php
+<?
+$file = $_SERVER['HOME'] . '/.snappy';
+if(!file_exists($file)) {
+    echo "Unable to locate config file\n";
+    exit(1);
+}
+$configs = json_decode(file_get_contents($file), true);
+$configs['current'] = 'current';
+
+$dir = $configs['base_dir'];
+if(!is_dir($dir)) {
+    echo "$dir is not a directory\n";
+    exit(1);
+}
+chdir($dir);
+
+$status = 0;
+
+switch($argv[1]) {
+    case 'current':
+        $current = getCurrent();
+        echo "v$current\n";
+        break;
+
+    case 'newest':
+        $newest = getNewest();
+        echo "v$newest\n";
+        break;
+
+    case 'oldest':
+        $oldest = getOldest();
+        echo "v$oldest\n";
+        break;
+
+    case 'list':
+        $releases = getReleases();
+        foreach($releases as $release) {
+            echo "v$release\n";
+        }
+        break;
+
+    case 'rollback':
+        if($previous = getPrevious()) {
+            setCurrent($previous);
+            $current = getCurrent();
+            echo "Current release is now v$current\n";
+            echo "You may need to restart Apache\n";
+        } else {
+            echo "No older release available\n";
+        }
+        break;
+
+    case 'rollforward':
+        if($next = getNext()) {
+            setCurrent($next);
+            $current = getCurrent();
+            echo "Current release is now v$current\n";
+            echo "You may need to restart Apache\n";
+        } else {
+            echo "No newer release available\n";
+        }
+        break;
+
+    case 'drop':
+        $status = dropRelease($argv[2]);
+
+        break;
+
+    case 'build':
+        $stauts = buildRelease($argv[2]);
+
+        break;
+
+    case 'hotfix':
+        if(!$argv[2]) {
+            echo "Must provide commit hash\n";
+            $status = 1;
+            break;
+        }
+        $hotfix = true;
+        //intentional fall-through
+    case 'deploy':
+        if($status = buildRelease($argv[2], $hotfix)) break;
+
+        $next = getNewest();
+
+        echo "Setting v$next as current release\n";
+        setCurrent($next);
+
+        if(count(getReleases()) > 3) {
+            echo "Removing oldest release\n";
+            dropRelease($oldest);
+        }
+
+        $current = getCurrent();
+        echo "Current release is now v$current\n";
+        echo "You may need to restart Apache\n";
+
+        break;
+
+    case 'help':
+        echo "current - show current release\n";
+        echo "newest - show newest available release\n";
+        echo "oldest - show oldest available release\n";
+        echo "list - show all available releases\n";
+        echo "rollback - move current release back one version\n";
+        echo "rollforward - move current release ahead one version\n";
+        echo "drop - drop release (defaults to oldest)\n";
+        echo "build - create a new release\n";
+        echo "deploy - create a new release and make it current\n";
+        echo "hotfix - create a hotfix release and make it current\n";
+        echo "help - display this help message\n";
+
+        break;
+
+    default:
+        $status = 1;
+        echo "Unknow command \"{$argv[1]}\"\n";
+        echo "Run \"snappy help\" to view commands\n";
+}
+
+function dropRelease($release) {
+    $oldest = $release ?: getOldest();
+    $current = getCurrent();
+
+    if($oldest == $current) {
+        echo "Cannot drop current version v$current\n";
+        return 1;
+    }
+
+    if(!is_numeric($oldest)) {
+        throw new Exception('Non-numeric release');
+    }
+
+    echo "Removing v$oldest\n";
+    exec("rm -rf releases/$oldest", $lines, $status);
+
+    return $status;
+}
+
+function initializeRelease() {
+    $next = getNewest() + 1;
+    echo "Deploying release v$next\n";
+
+    $current = getCurrent();
+    echo "Copying from current release v$current\n";
+    exec("cp -r releases/$current releases/$next", $lines, $status);
+
+    return $next;
+}
+
+function updateRelease($target) {
+    echo "Running Git updates\n";
+    $commit = $target ?: 'origin/master';
+    exec("git fetch -p origin", $lines, $status);
+
+    if($status) return $status;
+
+    exec("git reset --hard $commit", $lines, $status);
+
+    if($status) return $status;
+
+    echo "Running Bundler\n";
+    exec("bundle install --deployment", $lines, $status);
+
+    if($status) return $status;
+
+    echo "Compiling Assets\n";
+    exec("./bin/rails assets:precompile", $lines, $status);
+
+    return $status;
+}
+
+function hotfixRelease($target) {
+    echo "Running Git updates\n";
+    exec("git fetch -p origin", $lines, $status);
+
+    if($status) return $status;
+
+    exec("git reset --hard && git cherry-pick -x $target", $lines, $status);
+
+    return $status;
+}
+
+function buildRelease($target, $hotfix=false) {
+    $next = initializeRelease();
+
+    //move to new release directory
+    chdir("releases/$next");
+
+    $status = $hotfix ? hotfixRelease($target) : updateRelease($target);
+
+    //return to main directory
+    chdir("../..");
+
+    if($status) return $status;
+
+    echo "Successfully built v$next\n";
+
+    return 0;
+}
+
+function getReleases() {
+    $releases = scandir('releases');
+    sort($releases, SORT_NUMERIC);
+
+    return array_filter($releases, 'is_numeric');
+}
+
+function setCurrent($release) {
+    global $configs;
+
+    if(!is_numeric($release)) {
+        throw new Exception('Non-numeric release');
+    }
+
+    unlink($configs['current']);
+
+    return symlink("releases/$release", $configs['current']);
+}
+
+function getNewest() {
+    $releases = getReleases();
+
+    return end($releases);
+}
+
+function getOldest() {
+    $releases = getReleases();
+
+    return reset($releases);
+}
+
+function getCurrent() {
+    global $configs;
+
+    $path = readlink($configs['current']);
+
+    return end(explode('/', $path));
+}
+
+function getPrevious() {
+    $releases = array_reverse(getReleases());
+    $current = getCurrent();
+
+    foreach($releases as $release) {
+        if($release < $current) return $release;
+    }
+
+    return false;
+}
+
+function getNext() {
+    $releases = getReleases();
+    $current = getCurrent();
+
+    foreach($releases as $release) {
+        if($release > $current) return $release;
+    }
+
+    return false;
+}
+
+exit($status);
+?>
