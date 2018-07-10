@@ -45,7 +45,7 @@ switch($argv[1]) {
             setCurrent($previous);
             $current = getCurrent();
             echo "Current release is now v$current\n";
-            echo "You may need to restart Apache\n";
+            echo "You may need to restart Passenger\n";
         } else {
             echo "No older release available\n";
         }
@@ -56,7 +56,7 @@ switch($argv[1]) {
             setCurrent($next);
             $current = getCurrent();
             echo "Current release is now v$current\n";
-            echo "You may need to restart Apache\n";
+            echo "You may need to restart Passenger\n";
         } else {
             echo "No newer release available\n";
         }
@@ -95,8 +95,13 @@ switch($argv[1]) {
 
         $current = getCurrent();
         echo "Current release is now v$current\n";
-        echo "You may need to restart Apache\n";
+        echo "You may need to restart Passenger\n";
 
+        break;
+
+    case 'restart':
+        exec('touch current/tmp/restart.txt');
+        echo "Restart requested\n";
         break;
 
     case 'help':
@@ -110,6 +115,7 @@ switch($argv[1]) {
         echo "build - create a new release\n";
         echo "deploy - create a new release and make it current\n";
         echo "hotfix - create a hotfix release and make it current\n";
+        echo "restart - restart passenger application server\n";
         echo "help - display this help message\n";
 
         break;
