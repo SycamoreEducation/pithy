@@ -172,6 +172,11 @@ function updateRelease($target) {
 
     if($status) return $status;
 
+    echo "Running NPM\n";
+    exec("npm install", $lines, $status);
+
+    if($status) return $status;
+
     echo "Compiling Assets\n";
     exec("./bin/rails assets:precompile", $lines, $status);
 
@@ -185,6 +190,21 @@ function hotfixRelease($target) {
     if($status) return $status;
 
     exec("git reset --hard && git cherry-pick -x $target", $lines, $status);
+
+    if($status) return $status;
+
+    echo "Running Bundler\n";
+    exec("bundle install --deployment", $lines, $status);
+
+    if($status) return $status;
+
+    echo "Running NPM\n";
+    exec("npm install", $lines, $status);
+
+    if($status) return $status;
+
+    echo "Compiling Assets\n";
+    exec("./bin/rails assets:precompile", $lines, $status);
 
     return $status;
 }
